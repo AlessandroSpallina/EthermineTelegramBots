@@ -1,5 +1,5 @@
 # ========================================================================
-# Copyright © 2015 Alessandro Spallina
+# Copyright © 2017 Alessandro Spallina
 #
 # Github: https://github.com/AlessandroSpallina
 #
