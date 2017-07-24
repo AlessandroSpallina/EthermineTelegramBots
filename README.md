@@ -20,6 +20,7 @@ able to accept commands:
 * _help_ - print help
 * _status_ - print general info about all total hashrate and other trivials
 * _workers_ - print specifically workers infos
+
 This bot _check periodically for number of workers that should reach the pool_ and
 if this drop less than setted number the bot will advice the list of allowed users!
 Note that this code is __Free Software__ and free to modify and you can made everything
