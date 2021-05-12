@@ -42,8 +42,11 @@ WNUM = 3
 # i suggest to set this to 30 minutes
 WCHECKINGMINUTES = 30
 
+# bot won't request pool, if previous information had been fetched in X minutes before
+TTL = 3
+
 # this list contains user_id of user that are allowed to get response from the bot
-ALLOWEDUSERID = [000000, 111111]
+ALLOWEDUSERID = [0000000, 1111111]
 
 # log filename
 LOGPATH = "etc.log"
@@ -58,47 +61,66 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+class DashboardException(Exception):
+    pass
 
-def checkWorkers(bot, job):
+
+lastUpdate = int(time.time()) - TTL * 60
+cachedDashboard = {}
+
+def getDashboard():
+    global lastUpdate
+    global cachedDashboard
+
+    if int(time.time()) - lastUpdate < TTL * 60:
+        logger.info("Using cache from " + time.strftime("%d/%m/%y %H:%M", time.localtime(lastUpdate)))
+        return cachedDashboard
+
+    logger.info("Fetching dashboard. Last cache from " + time.strftime("%d/%m/%y %H:%M", time.localtime(lastUpdate)))
+
     conn = http.client.HTTPSConnection(APIHOST)
     conn.request("GET", APIURL)
     res = conn.getresponse()
+
+    if res.status != 200:
+        raise DashboardException("Unable to reach Ethermine: {}".format(res.reason)) 
+    
+    body = res.read().decode("utf-8")
+
+    db = json.loads(body)
+    cachedDashboard = db['data']
+    lastUpdate = int(time.time())
+    conn.close()
+
+    return cachedDashboard
+
+def checkWorkers(bot, job):
+    logger.info("checking workers")
     toSend = ""
-    if res.status == 200:
-        buf = json.loads(res.read().decode("utf-8"))
-        s = buf['data']['currentStatistics']
+    try:
+        s = getDashboard()['currentStatistics']
+        logger.info(s)
         if s['activeWorkers'] < WNUM:
-            toSend = "WARNING: Seems like some of your workers are offline ({}/{})\n---workers---\n".format(
+            toSend = "WARNING: Seems like some of your workers are offline ({}/{})".format(
                 s['activeWorkers'], WNUM)
-            for w in s['workers']:
-                toSend += "{}: {}/{} MH/s (Current/Reported hashrates)\n".format(
-                    w['worker'], # worker name
-                    w['currentHashrate'] * 100 // 1000000 / 100,
-                    w['reportedHashrate'] * 100 // 1000000 / 100
-                )
             for usr in ALLOWEDUSERID:
                 bot.send_message(usr, text=toSend)
-    else:
-        toSend = "Unable to reach Ethermine: {}".format(res.reason)
+    except DashboardException as err:
+        toSend = err
         for usr in ALLOWEDUSERID:
             bot.send_message(usr, text=toSend)
 
 
 def status(bot, update):
     if update.message.chat_id in ALLOWEDUSERID:
-        conn = http.client.HTTPSConnection(APIHOST)
-        conn.request("GET", APIURL)
-        res = conn.getresponse()
         toSend = ""
-        if res.status == 200:
-            buf = json.loads(res.read().decode("utf-8"))
-            aus = buf['data']['currentStatistics']
+        try:
+            aus = getDashboard()['currentStatistics']
             toSend = "Hashrate: {} MH/s\nReportedHashrate: {} MH/s\nnWorkers: {}\nShares (v/s/i): {}/{}/{}\nUnpaid: {} ETC\nUnconfirmed: {} ETC".format(
-                aus['currentHashrate'] * 100 // 1000000 / 100, aus['reportedHashrate'] * 100 // 1000000 / 100, aus['activeWorkers'], aus['validShares'], aus['staleShares'], aus['invalidShares'], aus['unpaid'] / 10**18, aus['unconfirmed'] / 10**18)
-        else:
-            toSend = "Unable to reach Ethermine: {}".format(res.reason)
+                aus['currentHashrate'] * 100 // 1000000 / 100, aus['reportedHashrate'] * 100 // 1000000 / 100, aus['activeWorkers'], aus['validShares'], aus['staleShares'], aus['invalidShares'], aus['unpaid'] / 10**18, aus['unconfirmed'] / 10**18)      
+        except DashboardException as err:
+            toSend = err
         update.message.reply_text(toSend)
-        conn.close()
     else:
         logger.info("{} tried to contact me (comm: {})".format(
             update.message.from_user, update.message.text))
@@ -106,20 +128,15 @@ def status(bot, update):
 
 def workers(bot, update):
     if update.message.chat_id in ALLOWEDUSERID:
-        conn = http.client.HTTPSConnection(APIHOST)
-        conn.request("GET", APIURL)
-        res = conn.getresponse()
         toSend = ""
-        if res.status == 200:
-            buf = json.loads(res.read().decode("utf-8"))
-            ws = buf['data']['workers']
+        try:
+            ws = getDashboard()['workers']
             for w in ws:
                 toSend += "Worker {}\nCurrentHashrate: {} MH/s\nReportedHashrate: {} MH/s\nShares (v/s/i): {}/{}/{}\nLastSeen: {}\n\n".format(
                     w['worker'], w['currentHashrate'] * 100 // 1000000 / 100, w['reportedHashrate'] * 100 // 1000000 / 100, w['validShares'], w['staleShares'], w['invalidShares'], time.strftime("%d/%m/%y %H:%M", time.localtime(w['lastSeen'])))
-        else:
-            toSend = "Unable to reach Ethermine: {}".format(res.reason)
+        except DashboardException as err:
+            toSend = err
         update.message.reply_text(toSend)
-        conn.close()
     else:
         logger.info("{} tried to contact me (comm: {})".format(
             update.message.from_user, update.message.text))
