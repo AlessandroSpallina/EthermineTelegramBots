@@ -43,7 +43,7 @@ python3 eth.py &
 ### TODO
 Telegram bot of Ethermine:
 * ETH -> done
-* ETC
+* ETC -> done
 * ZEC
 __feel free to open issue and propose and contribute!__
 
